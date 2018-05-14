@@ -1,4 +1,5 @@
-# GQLFTW: Fun with GraphQL, SPARQL and Wikidata
+# GQLFTW
+Fun with [GraphQL](httpd://graphql.org/), [SPARQL](https://en.wikipedia.org/wiki/SPARQL) and [Wikidata](https://query.wikidata.org/)
 
 ## Tools
 1. The [Go](https://golang.org) programming language
