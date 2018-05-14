@@ -1,0 +1,32 @@
+type Query {
+    # Find a company by homepage url (e.g., delta.com)
+    company(domain: String!): Company
+    # All loaded companies
+    companies: [Company]
+}
+
+# Business enterprise
+type Company {
+    id: ID!
+    # English name
+    name: String
+    # Primary website URL
+    homepage: String
+    # Company logo URL
+    logoUrl: String
+    # CEO or other senior leader
+    executive: Person
+    # People who work or worked for the company, other than the CEO
+    employees: [Person]
+}
+
+# Human
+type Person {
+    id: ID!
+    # Full name
+    name: String
+    # Company for which the person works
+    employer: Company
+    # Online photos
+    photoURLs: [String]
+}

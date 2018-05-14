@@ -1,0 +1,4 @@
+{
+    "Person": "github.com/nycmonkey/gqlftw/model.Person",
+    "Company": "github.com/nycmonkey/gqlftw/model.Company"
+}
