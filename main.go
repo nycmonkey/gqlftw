@@ -16,8 +16,11 @@ func main() {
 	if err != nil {
 		log.Fatalln(err)
 	}
+
+	queryHandler := handler.GraphQL(graph.MakeExecutableSchema(app))
+
 	http.Handle("/", handler.Playground("Todo", "/query"))
-	http.Handle("/query", handler.GraphQL(graph.MakeExecutableSchema(app)))
+	http.Handle("/query", graph.DataloaderMiddleware(app.Repo, app.QBank, queryHandler))
 
 	fmt.Println("Listening on :8081")
 	log.Fatal(http.ListenAndServe(":8081", nil))

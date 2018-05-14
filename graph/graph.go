@@ -5,6 +5,7 @@ import (
 	context "context"
 	"fmt"
 	"log"
+	"net/http"
 	"strings"
 	"time"
 
@@ -13,33 +14,39 @@ import (
 	model "github.com/nycmonkey/gqlftw/model"
 )
 
+type ctxKey string
+
+const (
+	personLoaderKey ctxKey = "personloader"
+)
+
 // MyApp serves GraphQL
 type MyApp struct {
 	// initial list of companies is loaded once to limit hits to the backend service
 	companies []model.Company
 	cIdx      map[string]int // maps URI to index in companies
-	qbank     sparql.Bank
-	repo      *sparql.Repo
+	QBank     sparql.Bank
+	Repo      *sparql.Repo
 }
 
 // New returns a GraphQL resolver
 func New() (app *MyApp, err error) {
 	a := MyApp{
-		qbank: sparql.LoadBank(bytes.NewBufferString(queries)),
+		QBank: sparql.LoadBank(bytes.NewBufferString(queries)),
 		cIdx:  make(map[string]int),
 	}
-	a.repo, err = sparql.NewRepo("https://query.wikidata.org/sparql",
-		sparql.Timeout(time.Second*2))
+	a.Repo, err = sparql.NewRepo("https://query.wikidata.org/sparql",
+		sparql.Timeout(time.Second*30))
 	if err != nil {
 		return
 	}
 	var q string
-	q, err = a.qbank.Prepare(`load-company-query`)
+	q, err = a.QBank.Prepare(`load-company-query`)
 	if err != nil {
 		return
 	}
 	log.Println(q)
-	reply, err := a.repo.Query(q)
+	reply, err := a.Repo.Query(q)
 	if err != nil {
 		return
 	}
@@ -74,22 +81,25 @@ func New() (app *MyApp, err error) {
 }
 
 // Company_executive resolves the head of the company according to Wikidata
-func (a *MyApp) Company_executive(ctx context.Context, obj *model.Company) (*model.Person, error) {
-	return a.loadPerson(obj.ExecutiveURI, obj.WikidataURI)
+func (a *MyApp) Company_executive(ctx context.Context, obj *model.Company) (person *model.Person, err error) {
+	person, err = ctx.Value(personLoaderKey).(*PersonLoader).Load(obj.ExecutiveURI)
+	if person != nil {
+		person.EmployerURI = obj.WikidataURI
+	}
+	return
 }
 
 // Company_employees resolves the employees of a company known to Wikidata
 func (a *MyApp) Company_employees(ctx context.Context, obj *model.Company) (results []model.Person, err error) {
-	// this really sucks without a dataloader or batch call
-	results = make([]model.Person, 0, len(obj.PeopleURIs))
-	for _, personURI := range obj.PeopleURIs {
-		var p *model.Person
-		p, err = a.loadPerson(personURI, obj.WikidataURI)
-		if err != nil {
-			return
-		}
+	people, errs := ctx.Value(personLoaderKey).(*PersonLoader).LoadAll(obj.PeopleURIs)
+	for i, p := range people {
 		if p != nil {
+			p.EmployerURI = obj.WikidataURI
 			results = append(results, *p)
+		}
+		if errs[i] != nil {
+			err = errs[i]
+			return
 		}
 	}
 	return
@@ -123,16 +133,19 @@ func (a *MyApp) Query_company(ctx context.Context, domain string) (*model.Compan
 }
 
 func (a *MyApp) Query_companies(ctx context.Context) ([]model.Company, error) {
+	if len(a.companies) > 20 {
+		return a.companies[:20], nil
+	}
 	return a.companies, nil
 }
 
 func (a *MyApp) loadPerson(personURI, companyURI string) (*model.Person, error) {
-	q, err := a.qbank.Prepare(`load-person-query`, struct{ URIs []string }{URIs: []string{personURI}})
+	q, err := a.QBank.Prepare(`load-person-query`, struct{ URIs []string }{URIs: []string{personURI}})
 	if err != nil {
 		return nil, err
 	}
 	log.Println(q)
-	result, err := a.repo.Query(q)
+	result, err := a.Repo.Query(q)
 	if err != nil {
 		return nil, err
 	}
@@ -150,6 +163,68 @@ func (a *MyApp) loadPerson(personURI, companyURI string) (*model.Person, error) 
 		p.PhotoURLs = append(p.PhotoURLs, sol[`personPhotoLabel`].String())
 	}
 	return &p, nil
+}
+
+func personFetchFn(wikidata *sparql.Repo, queryBank sparql.Bank) func([]string) ([]*model.Person, []error) {
+	return func(keys []string) (results []*model.Person, errors []error) {
+		results = make([]*model.Person, len(keys))
+		errors = make([]error, len(keys))
+		q, err := queryBank.Prepare(`load-person-query`, struct{ URIs []string }{URIs: keys})
+		if err != nil {
+			// bad template; fail whale
+			for i := 0; i < len(errors); i++ {
+				errors[i] = err
+			}
+			return
+		}
+		log.Println(q)
+		result, err := wikidata.Query(q)
+		if err != nil {
+			for i := 0; i < len(errors); i++ {
+				errors[i] = err
+			}
+			return
+		}
+		idx := make(map[string]int)
+		for i, k := range keys {
+			idx[k] = i
+		}
+		solutions := result.Solutions()
+		if len(solutions) == 0 {
+			for i := 0; i < len(errors); i++ {
+				errors[i] = fmt.Errorf(`no person found with URI '%s'`, keys[i])
+			}
+			return
+		}
+		for _, sol := range solutions {
+			uri := sol[`person`].String()
+			loc, ok := idx[uri]
+			if ok && results[loc] != nil {
+				results[loc].PhotoURLs = append(results[loc].PhotoURLs, sol[`personPhotoLabel`].String())
+				continue
+			}
+			p := model.Person{
+				WikidataURI: sol[`person`].String(),
+				Name:        sol[`personLabel`].String(),
+			}
+			p.PhotoURLs = append(p.PhotoURLs, sol[`personPhotoLabel`].String())
+			results[loc] = &p
+		}
+		return
+	}
+}
+
+func DataloaderMiddleware(wikidata *sparql.Repo, queryBank sparql.Bank, next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		personloader := PersonLoader{
+			maxBatch: 100,
+			wait:     3 * time.Millisecond,
+			fetch:    personFetchFn(wikidata, queryBank),
+		}
+		ctx := context.WithValue(r.Context(), personLoaderKey, &personloader)
+		r = r.WithContext(ctx)
+		next.ServeHTTP(w, r)
+	})
 }
 
 const queries = `
@@ -172,7 +247,7 @@ SELECT ?corp ?corpLabel ?homepage ?exec ?logoLabel ?emp WHERE {
 PREFIX wdt: <http://www.wikidata.org/prop/direct/>
 PREFIX wikibase: <http://wikiba.se/ontology#>
 SELECT ?person ?personLabel ?personPhotoLabel WHERE {
-  OPTIONAL { ?person wdt:P18 ?personPhoto . }
+  ?person wdt:P18 ?personPhoto .
   VALUES ( ?person ) { {{ range .URIs }} (<{{.}}>) {{ end }} }
   
   SERVICE wikibase:label { bd:serviceParam wikibase:language "en". }
