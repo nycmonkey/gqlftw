@@ -6,6 +6,7 @@ Fun with [GraphQL](httpd://graphql.org/), [SPARQL](https://en.wikipedia.org/wiki
 2. [dep](https://github.com/golang/dep) for dependency management in Go
 3. [gqlgen](https://github.com/vektah/gqlgen), a code generation tool to build strongly typed GraphQL servers in Go
 4. [dataloaden](https://github.com/vektah/dataloaden) for generating data laoder functions
+5. [Wikidata Query Service](https://query.wikidata.org/) to query Wikipedia data with SPARQL
 
 ## Setup to recreate this project
 1. Install Go and set the GOPATH environment variable to a directory containing three folders:
