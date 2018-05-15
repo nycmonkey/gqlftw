@@ -21,7 +21,7 @@ The steps below are modified from [this excellent guide](https://gqlgen.com/gett
 ## Concepts
 
 `gqlgen` inspects a GraphQL schema and corresponding Go code to generate most of the plumbing required to expose data via GraphQL.  Types from the GraphQL schema are mapped to Go types via a mapping file.  The mapping file is just json mapping a string GraphQL type to a fully qualified Go type.  For example, the following mapping indicates that the GraphQL type `Company` maps to the Go type `Company` in the package `github.com/nycmonkey/gqlftw/model`.
-```
+```JSON
 {
     "Company": "github.com/nycmonkey/gqlftw/model.Company"
 }
@@ -36,7 +36,7 @@ The steps below are modified from [this excellent guide](https://gqlgen.com/gett
     1. graph
     2. model
 2. Create a `main.go` file in the project root with the minimum content to compile:
-    ```
+    ```Go
     //go:generate gorunpkg github.com/vektah/gqlgen -typemap graph/types.json -out graph/generated.go -package graph
     
     package main
@@ -64,7 +64,7 @@ The steps below are modified from [this excellent guide](https://gqlgen.com/gett
 6. Generate the plumbing code by typing `go generate ./...` from the project root.  The comment at the top of the `main.go` file will be read by that command.  It should call `gqlgen` with the necessary arguments. If your folder structure varies from the layout suggested here, you may need to modify the flags
 7. Try to build the project with `go build`.  You should see a message that `graph.MyApp` is undefined.
 8. Create a new file `graph/graph.go`:
-    ```
+    ```Go
     // graph/graph.go
     package graph
 
