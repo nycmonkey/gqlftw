@@ -9,10 +9,7 @@ Fun with [GraphQL](httpd://graphql.org/), [SPARQL](https://en.wikipedia.org/wiki
 5. [Wikidata Query Service](https://query.wikidata.org/) to query Wikipedia data with SPARQL
 
 ## Setup to recreate this project
-1. Install Go and set the GOPATH environment variable to a directory containing three folders:
-  1. `src`
-  2. `pkg`
-  3. `bin`
+1. Install Go and set the GOPATH environment variable to a directory containing three folders: `src`, `pkg` and `bin`
 2. Download a [release]() of [dep](https://github.com/golang/dep) to your PATH
 3. Create a project folder (common convention is to use `$GOPATH/github.com/:username/:projectname`)
 4. Install [gqlgen](https://gqlgen.com/getting-started/) with `go get github.com/vektah/gqlgen`
